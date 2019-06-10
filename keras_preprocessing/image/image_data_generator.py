@@ -103,6 +103,7 @@ class ImageDataGenerator(object):
         interpolation_order: int, order to use for
             the spline interpolation. Higher is slower.
         dtype: Dtype to use for the generated arrays.
+        seed: Optional random seed for image transformations.
 
     # Examples
     Example of using `.flow(x, y)`:
@@ -274,7 +275,8 @@ class ImageDataGenerator(object):
                  data_format='channels_last',
                  validation_split=0.0,
                  interpolation_order=1,
-                 dtype='float32'):
+                 dtype='float32',
+                 seed=None):
 
         self.featurewise_center = featurewise_center
         self.samplewise_center = samplewise_center
@@ -317,6 +319,8 @@ class ImageDataGenerator(object):
                 '`validation_split` must be strictly between 0 and 1. '
                 ' Received: %s' % validation_split)
         self._validation_split = validation_split
+        self.np_random = np.random if seed is None else np.random.RandomState(seed)
+
 
         self.mean = None
         self.std = None
@@ -752,9 +756,7 @@ class ImageDataGenerator(object):
         """
         img_row_axis = self.row_axis - 1
         img_col_axis = self.col_axis - 1
-
-        if seed is not None:
-            np.random.seed(seed)
+        np_random = self.np_random if seed is None else np.random.RandomState(seed)
 
         if self.rotation_range:
             theta = np.random.uniform(
@@ -765,10 +767,10 @@ class ImageDataGenerator(object):
 
         if self.height_shift_range:
             try:  # 1-D array-like or int
-                tx = np.random.choice(self.height_shift_range)
-                tx *= np.random.choice([-1, 1])
+                tx = np_random.choice(self.height_shift_range)
+                tx *= np_random.choice([-1, 1])
             except ValueError:  # floating point
-                tx = np.random.uniform(-self.height_shift_range,
+                tx = np_random.uniform(-self.height_shift_range,
                                        self.height_shift_range)
             if np.max(self.height_shift_range) < 1:
                 tx *= img_shape[img_row_axis]
@@ -777,10 +779,10 @@ class ImageDataGenerator(object):
 
         if self.width_shift_range:
             try:  # 1-D array-like or int
-                ty = np.random.choice(self.width_shift_range)
-                ty *= np.random.choice([-1, 1])
+                ty = np_random.choice(self.width_shift_range)
+                ty *= np_random.choice([-1, 1])
             except ValueError:  # floating point
-                ty = np.random.uniform(-self.width_shift_range,
+                ty = np_random.uniform(-self.width_shift_range,
                                        self.width_shift_range)
             if np.max(self.width_shift_range) < 1:
                 ty *= img_shape[img_col_axis]
@@ -788,7 +790,7 @@ class ImageDataGenerator(object):
             ty = 0
 
         if self.shear_range:
-            shear = np.random.uniform(
+            shear = np_random.uniform(
                 -self.shear_range,
                 self.shear_range)
         else:
@@ -797,22 +799,22 @@ class ImageDataGenerator(object):
         if self.zoom_range[0] == 1 and self.zoom_range[1] == 1:
             zx, zy = 1, 1
         else:
-            zx, zy = np.random.uniform(
+            zx, zy = np_random.uniform(
                 self.zoom_range[0],
                 self.zoom_range[1],
                 2)
 
-        flip_horizontal = (np.random.random() < 0.5) * self.horizontal_flip
-        flip_vertical = (np.random.random() < 0.5) * self.vertical_flip
+        flip_horizontal = (np_random.rand() < 0.5) * self.horizontal_flip
+        flip_vertical = (np_random.rand() < 0.5) * self.vertical_flip
 
         channel_shift_intensity = None
         if self.channel_shift_range != 0:
-            channel_shift_intensity = np.random.uniform(-self.channel_shift_range,
+            channel_shift_intensity = np_random.uniform(-self.channel_shift_range,
                                                         self.channel_shift_range)
 
         brightness = None
         if self.brightness_range is not None:
-            brightness = np.random.uniform(self.brightness_range[0],
+            brightness = np_random.uniform(self.brightness_range[0],
                                            self.brightness_range[1])
 
         transform_parameters = {'theta': theta,
