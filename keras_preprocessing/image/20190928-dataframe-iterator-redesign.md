@@ -68,21 +68,22 @@ The addition of many use cases and the easy way to extend the API to handle more
 
 class DataFrameIterator:
 
-    def __init__(
-        self,
-        dataframe,
-        inputs_columns,
-        outputs_columns=None,
-        weight_column=None,
-        output_modes=None,
-        color_modes='rgb',
-        image_sizes=(255, 255),
-        image_data_generator=None,
-        batch_size=32,
-        shuffle=True,
-        seed=None,
-        validation_split=None,
-        subset=None):
+    def __init__(self,
+                 dataframe,
+                 inputs_columns,
+                 outputs_columns=None,
+                 weight_column=None,
+                 output_modes=None,
+                 input_image_shapes=(255, 255),
+                 output_image_shapes=None,
+                 input_color_modes='rgb',
+                 output_color_modes=None,
+                 image_data_generator=None,
+                 batch_size=32,
+                 shuffle=True,
+                 seed=None,
+                 validation_split=None,
+                 subset=None):
         """Generates a Dataset from a Pandas dataframe.
 
         # Arguments:
@@ -107,12 +108,22 @@ class DataFrameIterator:
                 - "bounding_box"
                 - "landmark"
                 - None
-            color_modes: String or dictionary with column names as keys and modes as values, specifying the color mode for the input columns. The following modes are available:
+                Default: None.
+            input_image_shapes: Tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the input columns.
+                Default: (255, 255).
+            output_image_shapes: None, tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the output columns. If None and `image_input_shapes` is tuple then it will take the same value as `image_input_shapes`.
+                Default: None.
+            input_color_modes: String or dictionary with column names as keys and modes as values, specifying the color mode for the input columns. The following modes are available:
                 - "grayscale"
                 - "rgb"
                 - "rgba"
+                Default: "rgb".
+            output_color_modes: None, string or dictionary with column names as keys and modes as values, specifying the color mode for the output columns. If None and `input_color_modes` is string then it will take thae same value as `input_color_modes`. The following modes are available:
+                - "grayscale"
+                - "rgb"
+                - "rgba"
+                Default: None.
             batch_size: Size of the batches of data (default: 32).
-            image_sizes: Tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the input columns.
             shuffle: Whether to shuffle the data.
             seed: Optional random seed for shuffling and transformations.
             validation_split: Optional float between 0 and 1, fraction of data to reserve for validation.
@@ -385,3 +396,5 @@ df_iter = DataFrameIterator(
 - Suppose the user wants the same image as input and output but the wants the color modes and sizes to be different. For example, for different color modes, training a model which takes grayscale images to color images. For different sizes, imagine training a model which takes a low resolution image to a higher resolution. With the current proposal the user will have to create the grayscale image and the down-sampled images and create an extra column with the paths too them. This can be solved by having a `output_color_modes` and `output_image_sizes` parameters, or by allowing the user to optionally specify these parameters when using the output mode `image`.
 
 - I think we should add 2 mote color modes: `grayscale_16bit` and `grayscale_32bit`. I recently added support for them but some parts are a bit hacky as the code has to "guess" the desired format. Currently this happens because internally the arrays are in `float32` such that the original mode information is lost. Should I submit another RFC for this? I think so.
+
+- Do we still want to provide the functionality of saving to disk the augmented images? This can become a bit complex to solve for all types of transformation and image data types, see [PR 244](https://github.com/keras-team/keras-preprocessing/pull/244).
