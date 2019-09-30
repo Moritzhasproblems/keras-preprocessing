@@ -74,7 +74,7 @@ class DataFrameIterator:
         inputs_columns,
         outputs_columns=None,
         weight_column=None,
-        outputs_modes=None,
+        output_modes=None,
         color_modes='rgb',
         image_sizes=(255, 255),
         image_data_generator=None,
@@ -135,6 +135,27 @@ Suppose the table below is stored in a Pandas DataFrame variables call `df`.
 |  /tmp/12.jpg | /tmp/12.npy | 7          | dog     | cat         | [dog, cat]  | [[x, y, h, w]]     | /tmp/extra/12.jpg  | 38               |
 |  /tmp/10.jpg | /tmp/10.npy | 7          | dog     | dog         | [dog]       | []     | /tmp/extra/10.jpg  | 47               |
 |  /tmp/4.jpg  | /tmp/4.npy  | 2          | cat     | cat         | [dog]       | [[x, y, h, w]]     | /tmp/extra/4.jpg   | 74               |
+
+
+> Note: in most example I ommit using the `image_data_generator` argument for brevity, but the same use case should hold if it is used.
+
+**Inference**
+
+Single input.
+```python
+df_iter = DataFrameIterator(
+    df,
+    input_columns='img_path'
+)
+```
+
+Multi-input.
+```python
+df_iter = DataFrameIterator(
+    df,
+    input_columns=['img_path', 'img_path_extra']
+)
+```
 
 **Regression**
 
