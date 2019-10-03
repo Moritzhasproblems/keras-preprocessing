@@ -91,77 +91,68 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
 
     def __init__(self,
                  dataframe,
-                 directory=None,
+                 input_columns,
+                 output_columns=None,
+                 weight_column=None,
+                 output_modes=None,
+                 input_image_sizes=(255, 255),
+                 output_image_sizes=None,
+                 input_color_modes='rgb',
+                 output_color_modes=None,
                  image_data_generator=None,
-                 x_col="filename",
-                 y_col="class",
-                 weight_col=None,
-                 target_size=(256, 256),
-                 color_mode='rgb',
-                 classes=None,
-                 class_mode='categorical',
                  batch_size=32,
                  shuffle=True,
                  seed=None,
-                 data_format='channels_last',
-                 save_to_dir=None,
-                 save_prefix='',
-                 save_format='png',
                  subset=None,
                  interpolation='nearest',
                  dtype='float32',
                  validate_filenames=True):
 
         super(DataFrameIterator, self).set_processing_attrs(image_data_generator,
-                                                            target_size,
-                                                            color_mode,
-                                                            data_format,
-                                                            save_to_dir,
-                                                            save_prefix,
-                                                            save_format,
+                                                            input_image_sizes,
+                                                            input_color_modes,
+                                                            'channels_last',
+                                                            None,
+                                                            '',
+                                                            'png',
                                                             subset,
                                                             interpolation)
-        df = dataframe.copy()
-        self.directory = directory or ''
-        self.class_mode = class_mode
-        self.dtype = dtype
-        # check that inputs match the required class_mode
-        self._check_params(df, x_col, y_col, weight_col, classes)
-        if validate_filenames:  # check which image files are valid and keep them
-            df = self._filter_valid_filepaths(df, x_col)
-        if class_mode not in ["input", "multi_output", "raw", None]:
-            df, classes = self._filter_classes(df, y_col, classes)
-            num_classes = len(classes)
-            # build an index of all the unique classes
-            self.class_indices = dict(zip(classes, range(len(classes))))
-        # retrieve only training or validation set
-        if self.split:
-            num_files = len(df)
-            start = int(self.split[0] * num_files)
-            stop = int(self.split[1] * num_files)
-            df = df.iloc[start: stop, :]
-        # get labels for each observation
-        if class_mode not in ["input", "multi_output", "raw", None]:
-            self.classes = self.get_classes(df, y_col)
-        self.filenames = df[x_col].tolist()
-        self._sample_weight = df[weight_col].values if weight_col else None
 
-        if class_mode == "multi_output":
-            self._targets = [np.array(df[col].tolist()) for col in y_col]
-        if class_mode == "raw":
-            self._targets = df[y_col].values
-        self.samples = len(self.filenames)
-        validated_string = 'validated' if validate_filenames else 'non-validated'
-        if class_mode in ["input", "multi_output", "raw", None]:
-            print('Found {} {} image filenames.'
-                  .format(self.samples, validated_string))
-        else:
-            print('Found {} {} image filenames belonging to {} classes.'
-                  .format(self.samples, validated_string, num_classes))
-        self._filepaths = [
-            os.path.join(self.directory, fname) for fname in self.filenames
-        ]
-        super(DataFrameIterator, self).__init__(self.samples,
+        if isinstance(input_columns, str):
+            input_columns = [input_columns]
+
+        if isinstance(output_columns, str):
+            output_columns = [output_columns]
+        elif output_columns is None:
+            output_columns = []
+
+        dataframe = self._filter_valid_filepaths(dataframe, input_columns)
+
+        output_modes = output_modes or {}
+        self.weight_column = weight_column
+        self.dtype = dtype
+
+        self.inputs = []
+        for col in input_columns:
+            self.inputs.append({
+                'column': col,
+                'valid_filepaths': dataframe[col].tolist()
+            })
+
+        from .output_transformations import transform_output
+        self.outputs = []
+        for col in output_columns:
+            mode = output_modes.get(col)
+            output_dict = {'column': col, 'mode': mode}
+            output = transform_output(mode, dataframe[col], self.dtype)
+            if mode is None:
+                output_dict['values'] = output
+            elif mode == 'sparse':
+                output_dict['values'] = output[0]
+                output_dict['class_indices'] = output[1]
+            self.outputs.append(output_dict)
+
+        super(DataFrameIterator, self).__init__(len(dataframe),
                                                 batch_size,
                                                 shuffle,
                                                 seed)
@@ -223,35 +214,7 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
                 labels.append(self.class_indices[label])
         return labels
 
-    @staticmethod
-    def _filter_classes(df, y_col, classes):
-        df = df.copy()
-
-        def remove_classes(labels, classes):
-            if isinstance(labels, (list, tuple)):
-                labels = [cls for cls in labels if cls in classes]
-                return labels or None
-            elif isinstance(labels, str):
-                return labels if labels in classes else None
-            else:
-                raise TypeError(
-                    "Expect string, list or tuple but found {} in {} column "
-                    .format(type(labels), y_col)
-                )
-
-        if classes:
-            classes = set(classes)  # sort and prepare for membership lookup
-            df[y_col] = df[y_col].apply(lambda x: remove_classes(x, classes))
-        else:
-            classes = set()
-            for v in df[y_col]:
-                if isinstance(v, (list, tuple)):
-                    classes.update(v)
-                else:
-                    classes.add(v)
-        return df.dropna(subset=[y_col]), sorted(classes)
-
-    def _filter_valid_filepaths(self, df, x_col):
+    def _filter_valid_filepaths(self, df, columns):
         """Keep only dataframe rows with valid filenames
 
         # Arguments
@@ -261,16 +224,18 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
         # Returns
             absolute paths to image files
         """
-        filepaths = df[x_col].map(
-            lambda fname: os.path.join(self.directory, fname)
-        )
-        mask = filepaths.apply(validate_filename, args=(self.white_list_formats,))
+        masks = np.full((len(df), len(columns)), True)
+        for i, col in enumerate(columns):
+            masks[:, i] = df[col].apply(
+                validate_filename, args=(self.white_list_formats,)
+            )
+        mask = np.all(masks, axis=1)
         n_invalid = (~mask).sum()
         if n_invalid:
             warnings.warn(
-                'Found {} invalid image filename(s) in x_col="{}". '
-                'These filename(s) will be ignored.'
-                .format(n_invalid, x_col)
+                'Found {} rows with invalid image filenames. '
+                'These rows will be ignored.'
+                .format(n_invalid)
             )
         return df[mask]
 

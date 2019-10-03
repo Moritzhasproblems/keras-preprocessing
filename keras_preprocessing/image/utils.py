@@ -109,7 +109,10 @@ def load_img(path, grayscale=False, color_mode='rgb', target_size=None,
     if pil_image is None:
         raise ImportError('Could not import PIL.Image. '
                           'The use of `load_img` requires PIL.')
-    img = pil_image.open(path)
+    if path.lower().endswith('npy'):
+        img = array_to_img(np.load(path), scale=True)
+    else:
+        img = pil_image.open(path)
     if color_mode == 'grayscale':
         # if image is not already an 8-bit, 16-bit or 32-bit grayscale image
         # convert it to an 8-bit grayscale image.
