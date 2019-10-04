@@ -147,7 +147,7 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
             output = transform_output(mode, dataframe[col], self.dtype)
             if mode is None:
                 output_dict['values'] = output
-            elif mode == 'sparse':
+            elif mode in ('sparse', 'categorical'):
                 output_dict['values'] = output[0]
                 output_dict['class_indices'] = output[1]
             self.outputs.append(output_dict)

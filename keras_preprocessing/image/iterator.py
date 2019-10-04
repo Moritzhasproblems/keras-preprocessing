@@ -237,6 +237,12 @@ class BatchFromFilesMixin():
         for output in self.outputs:
             if output['mode'] in (None, 'sparse'):
                 outputs_batch.append(output['values'][index_array])
+            elif output['mode'] == 'categorical':
+                batch_y = np.zeros((len(batch_x), len(output['class_indices'])),
+                                   dtype=self.dtype)
+                for i, n_observation in enumerate(index_array):
+                    batch_y[i, output['values'][n_observation]] = 1.
+                outputs_batch.append(batch_y)
 
         return inputs_batch, outputs_batch
 
