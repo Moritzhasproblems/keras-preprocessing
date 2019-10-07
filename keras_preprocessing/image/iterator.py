@@ -235,14 +235,19 @@ class BatchFromFilesMixin():
 
         outputs_batch = []
         for output in self.outputs:
-            if output['mode'] in (None, 'sparse'):
-                outputs_batch.append(output['values'][index_array])
+            if output['mode'] == 'image':
+                index = [i for i, _input in enumerate(self.inputs)
+                         if _input['column'] == output['column']]
+                if index:
+                    batch_y = inputs_batch[index[0]].copy()
+            elif output['mode'] in (None, 'sparse'):
+                batch_y = output['values'][index_array]
             elif output['mode'] == 'categorical':
                 batch_y = np.zeros((len(batch_x), len(output['class_indices'])),
                                    dtype=self.dtype)
                 for i, n_observation in enumerate(index_array):
                     batch_y[i, output['values'][n_observation]] = 1.
-                outputs_batch.append(batch_y)
+            outputs_batch.append(batch_y)
 
         return inputs_batch, outputs_batch
 

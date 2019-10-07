@@ -144,7 +144,10 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
         for col in output_columns:
             mode = output_modes.get(col)
             output_dict = {'column': col, 'mode': mode}
-            output = transform_output(mode, dataframe[col], self.dtype)
+            if mode == 'image':
+                output_dict['valid_filepaths'] = dataframe[col].tolist()
+            else:
+                output = transform_output(mode, dataframe[col], self.dtype)
             if mode is None:
                 output_dict['values'] = output
             elif mode in ('sparse', 'categorical'):
