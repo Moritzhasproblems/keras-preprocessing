@@ -738,7 +738,7 @@ class ImageDataGenerator(object):
                               'first by calling `.fit(numpy_data)`.')
         return x
 
-    def get_random_transform(self, img_shape, seed=None):
+    def get_random_transform(self, img_shape, seed=None, state=None):
         """Generates random parameters for a transformation.
 
         # Arguments
@@ -755,6 +755,8 @@ class ImageDataGenerator(object):
 
         if seed is not None:
             np.random.seed(seed)
+        elif state is not None:
+            np.random.set_state(state)
 
         if self.rotation_range:
             theta = np.random.uniform(

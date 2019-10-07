@@ -219,15 +219,25 @@ class BatchFromFilesMixin():
         # Returns
             A batch of transformed samples.
         """
+        random_state = np.random.get_state()
+        from .output_transformations import transform_batch
         inputs_batch = []
         # build batch of image data
         # self.filepaths is dynamic, is better to call it once outside the loop
         for _input in self.inputs:
-            batch_x = np.zeros(
-                (len(index_array),) + self.image_shape, dtype=self.dtype
+            batch_x = transform_batch(
+                'image',
+                _input['values'],
+                index_array,
+                self.dtype,
+                image_shape=self.image_shape,
+                color_mode=self.color_mode,
+                target_size=self.target_size,
+                interpolation=self.interpolation,
+                data_format=self.data_format,
+                image_data_generator=self.image_data_generator,
+                state=random_state
             )
-            for i, j in enumerate(index_array):
-                batch_x[i] = self._load_img(_input['valid_filepaths'][j])
             inputs_batch.append(batch_x)
 
         if len(self.outputs) == 0:
@@ -235,37 +245,26 @@ class BatchFromFilesMixin():
 
         outputs_batch = []
         for output in self.outputs:
-            if output['mode'] == 'image':
-                index = [i for i, _input in enumerate(self.inputs)
-                         if _input['column'] == output['column']]
-                if index:
-                    batch_y = inputs_batch[index[0]].copy()
-            elif output['mode'] in (None, 'sparse'):
-                batch_y = output['values'][index_array]
-            elif output['mode'] == 'categorical':
-                batch_y = np.zeros((len(batch_x), len(output['class_indices'])),
-                                   dtype=self.dtype)
-                for i, n_observation in enumerate(index_array):
-                    batch_y[i, output['values'][n_observation]] = 1.
+            batch_y = transform_batch(
+                output['mode'],
+                output['values'],
+                index_array,
+                self.dtype,
+                class_indices=output.get('class_indices'),
+                image_shape=self.image_shape,
+                color_mode=self.color_mode,
+                target_size=self.target_size,
+                interpolation=self.interpolation,
+                data_format=self.data_format,
+                image_data_generator=self.image_data_generator,
+                state=random_state,
+                inputs=self.inputs,
+                inputs_batch=inputs_batch,
+                output_column=output['column']
+            )
             outputs_batch.append(batch_y)
 
         return inputs_batch, outputs_batch
-
-    def _load_img(self, filepath):
-        img = load_img(filepath,
-                       color_mode=self.color_mode,
-                       target_size=self.target_size,
-                       interpolation=self.interpolation)
-        x = img_to_array(img, data_format=self.data_format)
-        # Pillow images should be closed after `load_img`,
-        # but not PIL images.
-        if hasattr(img, 'close'):
-            img.close()
-        if self.image_data_generator:
-            params = self.image_data_generator.get_random_transform(x.shape)
-            x = self.image_data_generator.apply_transform(x, params)
-            x = self.image_data_generator.standardize(x)
-        return x
 
         # # build batch of labels
         # if self.class_mode == 'input':
