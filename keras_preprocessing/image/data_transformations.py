@@ -1,37 +1,40 @@
 import numpy as np
 
+from .utils import img_to_array, load_img
 
-def transform_output(mode, values, dtype):
+
+def transform_output(mode, values):
     transformations = {
         None: _raw,
         'sparse': _sparse,
         'categorical': _categorical,
         'image': _image
     }
-    return transformations[mode](values, dtype)
+    return transformations[mode](values)
 
 
-def _raw(values, dtype):
-    return values.astype(dtype)
+def _raw(values):
+    return values.tolist()
 
 
-def _sparse(labels, dtype):
+def _sparse(labels):
     classes = __get_classes(labels)
     sorter = np.argsort(classes)
     values = sorter[np.searchsorted(classes, labels, sorter=sorter)]
-    return values.astype(dtype), dict(zip(range(len(classes)), classes))
+    return values.tolist(), dict(zip(range(len(classes)), classes))
 
 
-def _categorical(labels, dtype):
+def _categorical(labels):
     classes = __get_classes(labels)
     sorter = np.argsort(classes)
 
     values = [sorter[np.searchsorted(classes, label, sorter=sorter)]
               for label in labels]
+    values = [list(v) if not isinstance(v, np.integer)else v for v in values]
     return values, dict(zip(range(len(classes)), classes))
 
 
-def _image(filepaths_series, args, **kwargs):
+def _image(filepaths_series):
     return filepaths_series.tolist()
 
 
@@ -56,17 +59,14 @@ def transform_batch(mode, values, index_array, dtype, **kwargs):
 
 
 def _slice(values, index_array, dtype, **kwargs):
-    return values[index_array].astype(dtype)
+    return np.array(values, dtype=dtype)[index_array]
 
 
-def _binarize(values, index_array, dtype, class_indices, **kwargs):
-    batch_y = np.zeros((len(index_array), len(class_indices)), dtype=dtype)
+def _binarize(values, index_array, dtype, index_to_class, **kwargs):
+    batch_y = np.zeros((len(index_array), len(index_to_class)), dtype=dtype)
     for i, n_observation in enumerate(index_array):
         batch_y[i, values[n_observation]] = 1
     return batch_y
-
-
-from .utils import img_to_array, load_img
 
 
 def _load_images(filepaths,
@@ -76,7 +76,6 @@ def _load_images(filepaths,
                  color_mode,
                  target_size,
                  interpolation,
-                 data_format,
                  image_data_generator=None,
                  state=None,
                  inputs=None,
@@ -98,7 +97,7 @@ def _load_images(filepaths,
             target_size=target_size,
             interpolation=interpolation
         )
-        x = img_to_array(img, data_format=data_format)
+        x = img_to_array(img)
         # Pillow images should be closed after `load_img`,
         # but not PIL images.
         if hasattr(img, 'close'):

@@ -4,11 +4,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 import warnings
 
 import numpy as np
 
+from .data_transformations import transform_output
 from .iterator import BatchFromFilesMixin, Iterator
 from .utils import validate_filename
 
@@ -95,26 +95,19 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
                  output_columns=None,
                  weight_column=None,
                  output_modes=None,
-                 input_image_sizes=(255, 255),
-                 output_image_sizes=None,
-                 input_color_modes='rgb',
-                 output_color_modes=None,
+                 image_size=(255, 255),
+                 color_mode='rgb',
                  image_data_generator=None,
                  batch_size=32,
                  shuffle=True,
                  seed=None,
                  subset=None,
                  interpolation='nearest',
-                 dtype='float32',
-                 validate_filenames=True):
+                 dtype='float32'):
 
         super(DataFrameIterator, self).set_processing_attrs(image_data_generator,
-                                                            input_image_sizes,
-                                                            input_color_modes,
-                                                            'channels_last',
-                                                            None,
-                                                            '',
-                                                            'png',
+                                                            image_size,
+                                                            color_mode,
                                                             subset,
                                                             interpolation)
 
@@ -127,10 +120,13 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
             output_columns = []
 
         dataframe = self._filter_valid_filepaths(dataframe, input_columns)
+        if weight_column:
+            self.weights = dataframe[weight_column].values.astype(dtype)
+        else:
+            self.weights = None
+        self.dtype = dtype
 
         output_modes = output_modes or {}
-        self.weight_column = weight_column
-        self.dtype = dtype
 
         self.inputs = []
         for col in input_columns:
@@ -139,80 +135,22 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
                 'values': dataframe[col].tolist()
             })
 
-        from .output_transformations import transform_output
         self.outputs = []
         for col in output_columns:
             mode = output_modes.get(col)
             output_dict = {'column': col, 'mode': mode}
-            output = transform_output(mode, dataframe[col], self.dtype)
+            output = transform_output(mode, dataframe[col])
             if mode in (None, 'image'):
                 output_dict['values'] = output
             elif mode in ('sparse', 'categorical'):
                 output_dict['values'] = output[0]
-                output_dict['class_indices'] = output[1]
+                output_dict['index_to_class'] = output[1]
             self.outputs.append(output_dict)
 
         super(DataFrameIterator, self).__init__(len(dataframe),
                                                 batch_size,
                                                 shuffle,
                                                 seed)
-
-    def _check_params(self, df, x_col, y_col, weight_col, classes):
-        # check class mode is one of the currently supported
-        if self.class_mode not in self.allowed_class_modes:
-            raise ValueError('Invalid class_mode: {}; expected one of: {}'
-                             .format(self.class_mode, self.allowed_class_modes))
-        # check that y_col has several column names if class_mode is multi_output
-        if (self.class_mode == 'multi_output') and not isinstance(y_col, list):
-            raise TypeError(
-                'If class_mode="{}", y_col must be a list. Received {}.'
-                .format(self.class_mode, type(y_col).__name__)
-            )
-        # check that filenames/filepaths column values are all strings
-        if not all(df[x_col].apply(lambda x: isinstance(x, str))):
-            raise TypeError('All values in column x_col={} must be strings.'
-                            .format(x_col))
-        # check labels are string if class_mode is binary or sparse
-        if self.class_mode in {'binary', 'sparse'}:
-            if not all(df[y_col].apply(lambda x: isinstance(x, str))):
-                raise TypeError('If class_mode="{}", y_col="{}" column '
-                                'values must be strings.'
-                                .format(self.class_mode, y_col))
-        # check that if binary there are only 2 different classes
-        if self.class_mode == 'binary':
-            if classes:
-                classes = set(classes)
-                if len(classes) != 2:
-                    raise ValueError('If class_mode="binary" there must be 2 '
-                                     'classes. {} class/es were given.'
-                                     .format(len(classes)))
-            elif df[y_col].nunique() != 2:
-                raise ValueError('If class_mode="binary" there must be 2 classes. '
-                                 'Found {} classes.'.format(df[y_col].nunique()))
-        # check values are string, list or tuple if class_mode is categorical
-        if self.class_mode == 'categorical':
-            types = (str, list, tuple)
-            if not all(df[y_col].apply(lambda x: isinstance(x, types))):
-                raise TypeError('If class_mode="{}", y_col="{}" column '
-                                'values must be type string, list or tuple.'
-                                .format(self.class_mode, y_col))
-        # raise warning if classes are given but will be unused
-        if classes and self.class_mode in {"input", "multi_output", "raw", None}:
-            warnings.warn('`classes` will be ignored given the class_mode="{}"'
-                          .format(self.class_mode))
-        # check that if weight column that the values are numerical
-        if weight_col and not issubclass(df[weight_col].dtype.type, np.number):
-            raise TypeError('Column weight_col={} must be numeric.'
-                            .format(weight_col))
-
-    def get_classes(self, df, y_col):
-        labels = []
-        for label in df[y_col]:
-            if isinstance(label, (list, tuple)):
-                labels.append([self.class_indices[lbl] for lbl in label])
-            else:
-                labels.append(self.class_indices[label])
-        return labels
 
     def _filter_valid_filepaths(self, df, columns):
         """Keep only dataframe rows with valid filenames
@@ -238,18 +176,3 @@ class DataFrameIterator(BatchFromFilesMixin, Iterator):
                 .format(n_invalid)
             )
         return df[mask]
-
-    @property
-    def filepaths(self):
-        return self._filepaths
-
-    @property
-    def labels(self):
-        if self.class_mode in {"multi_output", "raw"}:
-            return self._targets
-        else:
-            return self.classes
-
-    @property
-    def sample_weight(self):
-        return self._sample_weight

@@ -4,19 +4,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 import threading
 import numpy as np
 from keras_preprocessing import get_keras_submodule
+from .data_transformations import transform_batch
 
 try:
     IteratorType = get_keras_submodule('utils').Sequence
 except ImportError:
     IteratorType = object
-
-from .utils import (array_to_img,
-                    img_to_array,
-                    load_img)
 
 
 class Iterator(IteratorType):
@@ -137,10 +133,6 @@ class BatchFromFilesMixin():
                              image_data_generator,
                              target_size,
                              color_mode,
-                             data_format,
-                             save_to_dir,
-                             save_prefix,
-                             save_format,
                              subset,
                              interpolation):
         """Sets attributes to use later for processing files into a batch.
@@ -175,25 +167,12 @@ class BatchFromFilesMixin():
             raise ValueError('Invalid color mode:', color_mode,
                              '; expected "rgb", "rgba", or "grayscale".')
         self.color_mode = color_mode
-        self.data_format = data_format
         if self.color_mode == 'rgba':
-            if self.data_format == 'channels_last':
-                self.image_shape = self.target_size + (4,)
-            else:
-                self.image_shape = (4,) + self.target_size
+            self.image_shape = self.target_size + (4,)
         elif self.color_mode == 'rgb':
-            if self.data_format == 'channels_last':
-                self.image_shape = self.target_size + (3,)
-            else:
-                self.image_shape = (3,) + self.target_size
+            self.image_shape = self.target_size + (3,)
         else:
-            if self.data_format == 'channels_last':
-                self.image_shape = self.target_size + (1,)
-            else:
-                self.image_shape = (1,) + self.target_size
-        self.save_to_dir = save_to_dir
-        self.save_prefix = save_prefix
-        self.save_format = save_format
+            self.image_shape = self.target_size + (1,)
         self.interpolation = interpolation
         if subset is not None:
             validation_split = self.image_data_generator._validation_split
@@ -220,7 +199,7 @@ class BatchFromFilesMixin():
             A batch of transformed samples.
         """
         random_state = np.random.get_state()
-        from .output_transformations import transform_batch
+
         inputs_batch = []
         # build batch of image data
         # self.filepaths is dynamic, is better to call it once outside the loop
@@ -234,7 +213,6 @@ class BatchFromFilesMixin():
                 color_mode=self.color_mode,
                 target_size=self.target_size,
                 interpolation=self.interpolation,
-                data_format=self.data_format,
                 image_data_generator=self.image_data_generator,
                 state=random_state
             )
@@ -250,12 +228,11 @@ class BatchFromFilesMixin():
                 output['values'],
                 index_array,
                 self.dtype,
-                class_indices=output.get('class_indices'),
+                index_to_class=output.get('index_to_class'),
                 image_shape=self.image_shape,
                 color_mode=self.color_mode,
                 target_size=self.target_size,
                 interpolation=self.interpolation,
-                data_format=self.data_format,
                 image_data_generator=self.image_data_generator,
                 state=random_state,
                 inputs=self.inputs,
@@ -264,50 +241,7 @@ class BatchFromFilesMixin():
             )
             outputs_batch.append(batch_y)
 
-        return inputs_batch, outputs_batch
-
-        # # build batch of labels
-        # if self.class_mode == 'input':
-        #     batch_y = batch_x.copy()
-        # elif self.class_mode in {'binary', 'sparse'}:
-        #     batch_y = np.empty(len(batch_x), dtype=self.dtype)
-        #     for i, n_observation in enumerate(index_array):
-        #         batch_y[i] = self.classes[n_observation]
-        # elif self.class_mode == 'categorical':
-        #     batch_y = np.zeros((len(batch_x), len(self.class_indices)),
-        #                        dtype=self.dtype)
-        #     for i, n_observation in enumerate(index_array):
-        #         batch_y[i, self.classes[n_observation]] = 1.
-        # elif self.class_mode == 'multi_output':
-        #     batch_y = [output[index_array] for output in self.labels]
-        # elif self.class_mode == 'raw':
-        #     batch_y = self.labels[index_array]
-        # else:
-        #     return batch_x
-        # if self.sample_weight is None:
-        #     return batch_x, batch_y
-        # else:
-        #     return batch_x, batch_y, self.sample_weight[index_array]
-
-    @property
-    def filepaths(self):
-        """List of absolute paths to image files"""
-        raise NotImplementedError(
-            '`filepaths` property method has not been implemented in {}.'
-            .format(type(self).__name__)
-        )
-
-    @property
-    def labels(self):
-        """Class labels of every observation"""
-        raise NotImplementedError(
-            '`labels` property method has not been implemented in {}.'
-            .format(type(self).__name__)
-        )
-
-    @property
-    def sample_weight(self):
-        raise NotImplementedError(
-            '`sample_weight` property method has not been implemented in {}.'
-            .format(type(self).__name__)
-        )
+        if self.weights is None:
+            return inputs_batch, outputs_batch
+        else:
+            return inputs_batch, outputs_batch, self.weights[index_array]
