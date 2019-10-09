@@ -25,6 +25,8 @@ Change the design of `DataFrameIterator` class to be more intuitive and flexible
 
 where the input data type is image data.
 
+I did an initial refactoring in my [fork's branch df-iterator-redesign](https://github.com/rragundez/keras-preprocessing/tree/df-iterator-redesign/keras_preprocessing/image), with some [notebook examples](https://github.com/rragundez/keras-preprocessing/tree/df-iterator-redesign/keras_preprocessing/image/notebook_examples ) where many but not all use cases are covered. NOTE: I have no intention or making a PR of this, but it serves as an example of what can be achieved.
+
 ## Motivation
 
 Currently the `DataFrameIterator` is limited by its design, but it can potentially be used to address numerous use cases. If designed correctly it can serve numerous use cases which are not currently possible and also new use cases can be added.
@@ -34,7 +36,7 @@ My proposal is based on two concepts:
 1. A single input or output can be linked to a single column.
 2. The user should tell us how to transform the data in that column. This is mostly applicable for outputs. For example:
 
-    - For an input column: is it an image file (png, jpg, tiff, etc.)?, is it an image in a numpy array format (.npy and .npz)? or another format? (this might be better handled automatically by detecting the file extension though.)
+    - For an input column: is it an image file (png, jpg, tiff, etc.)?, is it an image in a numpy array format (.npy)? or another format? (this might be better handled automatically by detecting the file extension though.)
     - For an output column: how do we transform this column (sparse, categorical, raw, bounding box, image augmentation as input, etc.)?
 
 I believe that by adopting these 2 concepts the objectives can be achieved. It does require a great deal of refactoring and change the way the API is used.
@@ -46,7 +48,7 @@ This change will be extremely valuable for anyone with a use case with image dat
 I identify the following problems with the current API:
 
 - There is no support if images are in any file format other than picture files (png, jpg, tiff, etc.) for example, as Numpy arrays (npy and npz). Not only is there no support for it, but is very difficult to add it.
-- Setting a seed happens at a global level which I believe is a bad practice. Instead a random state should be created.
+- Setting a seed happens at a global level which I believe is a bad practice. Instead a random state should be created or obtained such that a random process like data augmentation can be repeated is using the random state from it's initial state.
 - Because of the previous point, any use case where the input and output are images (segmentation, image noise removal, upscaling image to a higher resolution, etc.) there is the unnecessary need to create two identical image generators and link them via `zip`. I explain in the proposal description how I think it should work instead.
 - There is currently no support for bounding boxes or landmarks. It is also difficult to add them.
 - There is no general support of all use cases for multi-task learning. Currently there is only the possibility of using the `raw` mode for each task. This means the user has to perform the transformations necessary and then add them to the DataFrame. Example: input the image of a person and output the gender (binary), the race (multi-class) and the age (regression).
@@ -74,8 +76,8 @@ class DataFrameIterator:
                  outputs_columns=None,
                  weight_column=None,
                  output_modes=None,
-                 input_image_shapes=(255, 255),
-                 output_image_shapes=None,
+                 input_image_sizes=(255, 255),
+                 output_image_sizes=None,
                  input_color_modes='rgb',
                  output_color_modes=None,
                  image_data_generator=None,
@@ -109,9 +111,9 @@ class DataFrameIterator:
                 - "landmark"
                 - None
                 Default: None.
-            input_image_shapes: Tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the input columns.
+            input_image_sizes: Tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the input columns.
                 Default: (255, 255).
-            output_image_shapes: None, tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the output columns. If None and `image_input_shapes` is tuple then it will take the same value as `image_input_shapes`.
+            output_image_sizes: None, tuple or dictionary with column names as keys and tuples sizes as values, specifying size to use to resize images coming for the output columns. If None and `image_input_shapes` is tuple then it will take the same value as `image_input_shapes`.
                 Default: None.
             input_color_modes: String or dictionary with column names as keys and modes as values, specifying the color mode for the input columns. The following modes are available:
                 - "grayscale"
@@ -131,7 +133,7 @@ class DataFrameIterator:
         """
 ```
 
-> Note A: I prefer to use plural, `inputs_columns` and `outputs_columns`, instead of `input_column` and `output_column` to keep consistency with the [`Model` class](https://keras.io/models/model/) signature which has `inputs` and `outputs`.
+> Note A: I prefer to use plural, `input_columns` and `output_columns`, instead of `input_column` and `output_column` to keep consistency with the [`Model` class](https://keras.io/models/model/) signature which has `inputs` and `outputs`.
 
 > Note B: I also think we should not use the word `target(s)` in this documentation, but `output(s)`. I believe this is more consistent with the fact that we do not know if the user will actually use the output(s) as targets or if it will apply some extra processing to the output to convert it to targets. I think this should also be applied to the code (naming variables).
 
@@ -339,7 +341,7 @@ df_iter = DataFrameIterator(
     input_column=['img_path', 'img_path_extra'],
     output_columns='regression',
     color_modes='rgb',
-    image_sizes=(255, 255)
+    input_image_sizes=(255, 255)
 )
 ```
 
@@ -349,8 +351,8 @@ df_iter = DataFrameIterator(
     df,
     input_column=['img_path', 'img_path_extra'],
     output_columns='regression',
-    color_modes={'img_path': 'rgb', 'img_path_extra': 'grayscale'}
-    image_sizes={'img_path': (10, 10), 'img_path_extra': (20, 20)},
+    color_modes={'img_path': 'rgb', 'img_path_extra': 'grayscale'},
+    input_image_sizes={'img_path': (10, 10), 'img_path_extra': (20, 20)},
     image_data_generator=img_generator
 )
 ```
@@ -359,19 +361,20 @@ df_iter = DataFrameIterator(
 
 #### Output transformations
 
-- Current: transformations are embedded directly into the `Iterator` base class code.
-- Proposal: a module `output_transformations.py` which handles the logic. Which has almost all private methods except for a function `transform_output` that receives the output mode + the necessary information and returns the outputs in the correct format as a batch. I raise a point in [Questions and Discussion Topics](#Questions-and-Discussion-Topics) on whether this should be functions or a class.
+- Current: transformations are embedded directly into the `Iterator` base class and the `DataFrameIterator` class.
+- Proposal: a module `data_transformations.py` which handles the logic. Which has almost all private methods except for a functions `transform_output` and `transform_batch`. `transform_output` applies the logic necessary to obtain the information to create a batch (applied in `DataFrameIterator`). `transform_batch` has the logic to actually create the batch (applied in `Iterator`).
 
-#### Random chains iterators
+#### DataFrameIterator and Iterator
 
-- Current: setting a seed affects the global scope and is difficult (impossible?) to have two equal random states generating the same output. The latter is the reason why segmentation requires the use to build two separate equal `ImageDataGenerators`.
-- Proposal: use an existing class (like `numpy.random.RandomState`) or create a new one which together with `itertools.tee` or `copy.deepcopy` can replicate random chain iterators. By replicating the random chain iterator we can send each iterator to each image that needs to be equally augmented internally.
+- The logic should be change to use the `transform_output` and `transform_batch`.
+- There shuold be a loop or similar that accumullates the batches from each input or output.
+- Data agumentation should be replicated within the create of a batch for any input or output of image type.
 
 
 ### Impact
 
 - The UX and usability learning curve will be higher to the current one. Therefore good documentation and examples are extremely important.
-- I believe that performance should not be impacted by this change as each use case can be addressed and optimized separately in the `output_transformations.py` module.
+- I believe that performance should not be impacted by this change as each use case can be addressed and optimized separately in the `data_transformations.py` module.
 - Dependencies should stay the same.
 - It won't be backwards compatible at all. A plan to communicate the change needs to be carefully thought with incremental steps: announcement, deprecation warning, change to new API.
 
@@ -382,16 +385,15 @@ df_iter = DataFrameIterator(
 
 - Do we need to think about images using separate data augmentation logics, in the case of multi-input or multi-output? I think this is a stretch for this RFC.
 
-- Do we want the `output_transformations.py` array/tensor transformations to be already done in `tensorflow` land or `numpy` land?
+- Do we want the `data_transformations.py` array/tensor transformations to be already done in `tensorflow` land or `numpy` land?
 
-- For image classification use cases, we need a clear distinction/definition not only in the documentation but also in the code between `labels`, `classes`, `labels_index` and `classes_index`. Where `labels` and `classes` are only strings, and `labels_indices` and `classes_indices` are defined as integers.
+- For image classification use cases, we need a clear distinction/definition not only in the documentation but also in the code between `labels`, `classes`, `label_indices`, `class_indices` and `class_to_index`. Where `labels` and `classes` are only strings, and `label_indices` and `class_indices` are defined as integers. `class_to_index` is a dictionary mapping tthe class string to the integer index.
 
-- There is currently extra functionality for classification tasks, which I'm not sure is wise to include in the redesign as the API changes focus to a more broad use cases. For example:
+- There is currently functionality, which I'm not sure is wise to include in the redesign as the API changes focus to a more broad use cases. For example:
 
-    - currently the user can give a list of classes to use.
+    - currently the userer can give a directory and provide relative paths. Supporting this feature greatly affects the logic for segmentation, multi-input and multi-output.
+    - currently the user can give a list of classes to use. I think it can also be an option that the user filters the df. Is one line in pandas.
     - introduce a warning or exception if validation set has a class which is not in the training set?
-
-- It might be that the logic in `output_transformations.py` could be handle better in a class `OutputTransformer` for example. Then `DataFrameIterator` and other iterators can inherit from it. Then, for example in classification, the transformation method also creates class attributes that are only interesting for classification like `classes` or `class indices`. In this way, if the user is doing regression the class will not hold unnecessary attributes. I think this is nice from the user perspective, but I am not such a fan of the idea of having dynamic attributes in the same class depending on the use case.
 
 - Suppose the user wants the same image as input and output but the wants the color modes and sizes to be different. For example, for different color modes, training a model which takes grayscale images to color images. For different sizes, imagine training a model which takes a low resolution image to a higher resolution. With the current proposal the user will have to create the grayscale image and the down-sampled images and create an extra column with the paths too them. This can be solved by having a `output_color_modes` and `output_image_sizes` parameters, or by allowing the user to optionally specify these parameters when using the output mode `image`.
 
