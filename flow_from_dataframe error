@@ -1,0 +1,107 @@
+Why does this say Found 0 validated image filenames belonging to 0 classes. 
+It should find some because there a files in this directory, with the id given in the dataframe.
+PLEASE HELP
+
+
+
+df = pd.read_csv('../input/train_labels.csv')
+print(df.head())
+df["label"] = df["label"].astype(str)
+train_datagen = ImageDataGenerator(
+       horizontal_flip=True,
+       vertical_flip=True,
+       brightness_range=[0.5, 1.5],
+       fill_mode='reflect',                               
+       rotation_range=15,
+       rescale=1./255,
+       shear_range=0.2,
+       zoom_range=0.2
+       validation_split=0.15
+    
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_path = '../input/train'
+valid_path = '../input/train'
+
+train_generator = train_datagen.flow_from_dataframe(
+                dataframe=df,
+                directory=train_path,
+                x_col = 'id',
+                y_col = 'label',
+                
+                subset='training',
+                target_size=(96, 96),
+                batch_size=64,
+                class_mode='binary'
+                )
+
+validation_generator = train_datagen.flow_from_dataframe(
+                dataframe=df,
+                directory=valid_path,
+                x_col = 'id',
+                y_col = 'label',
+                
+                subset='validation', # This is the trick to properly separate train and validation dataset
+                target_size=(96, 96),
+                batch_size=64,
+                shuffle=False,
+                class_mode='binary')df = pd.read_csv('../input/train_labels.csv')
+print(df.head())
+df["label"] = df["label"].astype(str)
+train_datagen = ImageDataGenerator(
+       # horizontal_flip=True,
+       #vertical_flip=True,
+       #brightness_range=[0.5, 1.5],
+       #fill_mode='reflect',                               
+        #rotation_range=15,
+        rescale=1./255,
+        #shear_range=0.2,
+        #zoom_range=0.2
+        validation_split=0.15
+    
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_path = '../input/train'
+valid_path = '../input/train'
+
+train_generator = train_datagen.flow_from_dataframe(
+                dataframe=df,
+                directory=train_path,
+                x_col = 'id',
+                y_col = 'label',
+                
+                subset='training',
+                target_size=(96, 96),
+                batch_size=64,
+                class_mode='binary'
+                )
+
+validation_generator = train_datagen.flow_from_dataframe(
+                dataframe=df,
+                directory=valid_path,
+                x_col = 'id',
+                y_col = 'label',
+                
+                subset='validation', # This is the trick to properly separate train and validation dataset
+                target_size=(96, 96),
+                batch_size=64,
+                shuffle=False,
+                class_mode='binary')
+
+
+
+output:
+
+                                         id  label
+0  f38a6374c348f90b587e046aac6079959adf3835      0
+1  c18f2d887b7ae4f6742ee445113fa1aef383ed77      1
+2  755db6279dae599ebb4d39a9123cce439965282d      0
+3  bc3f0c64fb968ff4a8bd33af6971ecae77c75e08      0
+4  068aba587a4950175d04c680d38943fd488d6a9d      0
+
+Found 0 validated image filenames belonging to 0 classes.
+Found 0 validated image filenames belonging to 0 classes.
